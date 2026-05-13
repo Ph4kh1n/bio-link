@@ -9,6 +9,12 @@ function preloadImage(url) {
   })
 }
 
+const PROXIES = [
+  (u) => `/api/ig?username=${encodeURIComponent(u)}`,
+  (u) =>
+    `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(`https://www.instagram.com/${u}/`)}`,
+]
+
 export default function useInstagramAvatar(username) {
   const [avatarUrl, setAvatarUrl] = useState(null)
   const [loading, setLoading] = useState(true)
@@ -28,30 +34,48 @@ export default function useInstagramAvatar(username) {
     }
 
     let cancelled = false
+    let index = 0
 
-    function fetchFromApi() {
-      fetch(`/api/ig?username=${encodeURIComponent(username)}`)
+    function attempt() {
+      if (cancelled || index >= PROXIES.length) {
+        if (!cancelled) setLoading(false)
+        return
+      }
+
+      const url = PROXIES[index](username)
+
+      fetch(url)
         .then((r) => {
           if (!r.ok) throw new Error(`HTTP ${r.status}`)
-          return r.json()
+          const ct = r.headers.get('content-type') || ''
+          return r.text().then((text) => {
+            if (ct.includes('application/json') || url === PROXIES[0](username)) {
+              try {
+                const data = JSON.parse(text)
+                if (data.profile_pic_url) return data.profile_pic_url
+              } catch {}
+            }
+            const m = text.match(
+              /<meta\s[^>]*property="og:image"[^>]*content="([^"]+)"/i
+            )
+            if (m) return m[1].replace(/&amp;/g, '&')
+            throw new Error('not found')
+          })
         })
-        .then((data) => {
-          if (cancelled) return
-          if (!data.profile_pic_url) throw new Error('no url')
-          return preloadImage(data.profile_pic_url)
-        })
+        .then((imgUrl) => preloadImage(imgUrl))
         .then((imgUrl) => {
-          if (cancelled || !imgUrl) return
+          if (cancelled) return
           localStorage.setItem(cacheKey, imgUrl)
           setAvatarUrl(imgUrl)
           setLoading(false)
         })
         .catch(() => {
-          if (!cancelled) setLoading(false)
+          index++
+          attempt()
         })
     }
 
-    fetchFromApi()
+    attempt()
 
     return () => {
       cancelled = true

@@ -1,12 +1,11 @@
 export default async function handler(req, res) {
-  const url = new URL(req.url, `http://${req.headers.host}`)
-  const username = url.searchParams.get('username')
+  const username = req.query?.username
 
   if (!username) {
     return res.status(400).json({ error: 'username required' })
   }
 
-  try {
+  async function tryApi() {
     const ig = await fetch(
       `https://www.instagram.com/api/v1/users/web_profile_info/?username=${encodeURIComponent(username)}`,
       {
@@ -19,18 +18,44 @@ export default async function handler(req, res) {
         },
       }
     )
-
     const data = await ig.json()
-    const user = data?.data?.user
-    const picUrl = user?.profile_pic_url_hd || user?.profile_pic_url
-
-    if (!picUrl) {
-      return res.status(404).json({ error: 'no profile pic found' })
-    }
-
-    res.setHeader('Cache-Control', 'public, max-age=3600')
-    return res.json({ profile_pic_url: picUrl })
-  } catch (err) {
-    return res.status(500).json({ error: err.message })
+    return data?.data?.user?.profile_pic_url_hd || data?.data?.user?.profile_pic_url
   }
+
+  async function tryScrape() {
+    const page = await fetch(`https://www.instagram.com/${username}/`, {
+      headers: {
+        'User-Agent':
+          'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        Accept: 'text/html',
+      },
+    })
+    const html = await page.text()
+    const m = html.match(
+      /<meta\s[^>]*property="og:image"[^>]*content="([^"]+)"/i
+    )
+    return m ? m[1].replace(/&amp;/g, '&') : null
+  }
+
+  let picUrl
+  let source
+
+  try {
+    picUrl = await tryApi()
+    if (picUrl) source = 'api'
+  } catch {}
+
+  if (!picUrl) {
+    try {
+      picUrl = await tryScrape()
+      if (picUrl) source = 'scrape'
+    } catch {}
+  }
+
+  if (!picUrl) {
+    return res.status(404).json({ error: 'no profile pic found' })
+  }
+
+  res.setHeader('Cache-Control', 'public, max-age=3600')
+  return res.json({ profile_pic_url: picUrl, source })
 }
