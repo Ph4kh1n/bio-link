@@ -1,16 +1,5 @@
 import { useState, useEffect } from 'react'
 
-const PROXIES = [
-  (username) => `/api/ig/${username}/`,
-  (username) => `https://api.allorigins.win/raw?url=${encodeURIComponent(`https://www.instagram.com/${username}/`)}`,
-  (username) => `https://corsproxy.io/?url=${encodeURIComponent(`https://www.instagram.com/${username}/`)}`,
-]
-
-function parseOgImage(html) {
-  const m = html.match(/<meta\s[^>]*property="og:image"[^>]*content="([^"]+)"/i)
-  return m ? m[1].replace(/&amp;/g, '&') : null
-}
-
 function preloadImage(url) {
   return new Promise((resolve, reject) => {
     const img = new Image()
@@ -38,46 +27,63 @@ export default function useInstagramAvatar(username) {
       return
     }
 
+    const endpoints = [
+      `/api/ig/${username}/`,
+      `/api/ig?username=${username}`,
+      `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(`https://www.instagram.com/${username}/`)}`,
+    ]
+
     let cancelled = false
-    let proxyIndex = 0
+    let index = 0
 
     function attempt() {
-      if (cancelled || proxyIndex >= PROXIES.length) {
+      if (cancelled || index >= endpoints.length) {
         if (!cancelled) setLoading(false)
         return
       }
 
-      const url = PROXIES[proxyIndex](username)
+      const url = endpoints[index]
+
+      const isApi =
+        url.startsWith('/api/ig') || url.startsWith(window.location.origin + '/api/ig')
 
       fetch(url)
         .then((r) => {
           if (!r.ok) throw new Error(`HTTP ${r.status}`)
-          return r.text()
-        })
-        .then((html) => {
-          if (cancelled) return
-          const imgUrl = parseOgImage(html)
-          if (imgUrl) {
-            return preloadImage(imgUrl).then(() => {
-              if (cancelled) return
-              localStorage.setItem(cacheKey, imgUrl)
-              setAvatarUrl(imgUrl)
-              setLoading(false)
+
+          if (isApi) {
+            return r.json().then((data) => {
+              if (data.profile_pic_url) return data.profile_pic_url
+              throw new Error('no profile_pic_url')
             })
-          } else {
-            proxyIndex++
-            attempt()
           }
+
+          return r.text().then((html) => {
+            const m = html.match(
+              /<meta\s[^>]*property="og:image"[^>]*content="([^"]+)"/i
+            )
+            if (m) return m[1].replace(/&amp;/g, '&')
+            throw new Error('og:image not found')
+          })
+        })
+        .then((imgUrl) => preloadImage(imgUrl))
+        .then((imgUrl) => {
+          if (cancelled) return
+          localStorage.setItem(cacheKey, imgUrl)
+          setAvatarUrl(imgUrl)
+          setLoading(false)
         })
         .catch(() => {
-          proxyIndex++
+          index++
           attempt()
         })
     }
 
     attempt()
 
-    return () => { cancelled = true }
+    return () => {
+      cancelled = true
+    }
   }, [username])
 
   return { avatarUrl, loading }
