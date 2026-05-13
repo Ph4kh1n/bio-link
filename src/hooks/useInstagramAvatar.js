@@ -27,54 +27,31 @@ export default function useInstagramAvatar(username) {
       return
     }
 
-    const endpoints = [
-      `/api/ig/${username}/`,
-      `/api/ig?username=${username}`,
-      `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(`https://www.instagram.com/${username}/`)}`,
-    ]
-
     let cancelled = false
-    let index = 0
 
-    function attempt() {
-      if (cancelled || index >= endpoints.length) {
-        if (!cancelled) setLoading(false)
-        return
-      }
-
-      const url = endpoints[index]
-
-      fetch(url)
+    function fetchFromApi() {
+      fetch(`/api/ig?username=${encodeURIComponent(username)}`)
         .then((r) => {
           if (!r.ok) throw new Error(`HTTP ${r.status}`)
-          const ct = r.headers.get('content-type') || ''
-          return r.text().then((text) => {
-            if (ct.includes('application/json')) {
-              const data = JSON.parse(text)
-              if (data.profile_pic_url) return data.profile_pic_url
-              throw new Error('no profile_pic_url')
-            }
-            const m = text.match(
-              /<meta\s[^>]*property="og:image"[^>]*content="([^"]+)"/i
-            )
-            if (m) return m[1].replace(/&amp;/g, '&')
-            throw new Error('og:image not found')
-          })
+          return r.json()
         })
-        .then((imgUrl) => preloadImage(imgUrl))
-        .then((imgUrl) => {
+        .then((data) => {
           if (cancelled) return
+          if (!data.profile_pic_url) throw new Error('no url')
+          return preloadImage(data.profile_pic_url)
+        })
+        .then((imgUrl) => {
+          if (cancelled || !imgUrl) return
           localStorage.setItem(cacheKey, imgUrl)
           setAvatarUrl(imgUrl)
           setLoading(false)
         })
         .catch(() => {
-          index++
-          attempt()
+          if (!cancelled) setLoading(false)
         })
     }
 
-    attempt()
+    fetchFromApi()
 
     return () => {
       cancelled = true

@@ -9,23 +9,26 @@ exports.handler = async (event) => {
   }
 
   try {
-    const res = await fetch(`https://www.instagram.com/${username}/`, {
-      headers: {
-        'User-Agent':
-          'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-        Accept: 'text/html',
-      },
-    })
-
-    const html = await res.text()
-    const match = html.match(
-      /<meta\s[^>]*property="og:image"[^>]*content="([^"]+)"/i
+    const ig = await fetch(
+      `https://www.instagram.com/api/v1/users/web_profile_info/?username=${encodeURIComponent(username)}`,
+      {
+        headers: {
+          'User-Agent':
+            'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+          'X-IG-App-ID': '936619743392459',
+          'X-Requested-With': 'XMLHttpRequest',
+          Referer: 'https://www.instagram.com/',
+        },
+      }
     )
 
-    if (!match) {
+    const data = await ig.json()
+    const picUrl = data?.data?.user?.profile_pic_url_hd || data?.data?.user?.profile_pic_url
+
+    if (!picUrl) {
       return {
         statusCode: 404,
-        body: JSON.stringify({ error: 'og:image not found' }),
+        body: JSON.stringify({ error: 'no profile pic found' }),
       }
     }
 
@@ -35,9 +38,7 @@ exports.handler = async (event) => {
         'Content-Type': 'application/json',
         'Cache-Control': 'public, max-age=3600',
       },
-      body: JSON.stringify({
-        profile_pic_url: match[1].replace(/&amp;/g, '&'),
-      }),
+      body: JSON.stringify({ profile_pic_url: picUrl }),
     }
   } catch (err) {
     return {
