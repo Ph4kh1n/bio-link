@@ -1,11 +1,5 @@
 {
   "rewrites": [
-    { "source": "/api/ig", "destination": "/api/ig" },
     { "source": "/(.*)", "destination": "/index.html" }
-  ],
-  "functions": {
-    "api/ig.js": {
-      "maxDuration": 10
-    }
-  }
+  ]
 }

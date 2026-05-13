@@ -1,16 +1,13 @@
-export async function onRequest(context) {
-  const url = new URL(context.request.url)
-  const username = url.searchParams.get('username') || context.params?.username
+export default async function handler(req, res) {
+  const url = new URL(req.url, `http://${req.headers.host}`)
+  const username = url.searchParams.get('username')
 
   if (!username) {
-    return new Response(JSON.stringify({ error: 'username required' }), {
-      status: 400,
-      headers: { 'Content-Type': 'application/json' },
-    })
+    return res.status(400).json({ error: 'username required' })
   }
 
   try {
-    const res = await fetch(`https://www.instagram.com/${username}/`, {
+    const ig = await fetch(`https://www.instagram.com/${username}/`, {
       headers: {
         'User-Agent':
           'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
@@ -18,33 +15,18 @@ export async function onRequest(context) {
       },
     })
 
-    const html = await res.text()
+    const html = await ig.text()
     const match = html.match(
       /<meta\s[^>]*property="og:image"[^>]*content="([^"]+)"/i
     )
 
     if (!match) {
-      return new Response(JSON.stringify({ error: 'og:image not found' }), {
-        status: 404,
-        headers: { 'Content-Type': 'application/json' },
-      })
+      return res.status(404).json({ error: 'og:image not found' })
     }
 
-    return new Response(
-      JSON.stringify({ profile_pic_url: match[1].replace(/&amp;/g, '&') }),
-      {
-        headers: {
-          'Content-Type': 'application/json',
-          'Cache-Control': 'public, max-age=3600',
-        },
-      }
-    )
+    res.setHeader('Cache-Control', 'public, max-age=3600')
+    return res.json({ profile_pic_url: match[1].replace(/&amp;/g, '&') })
   } catch (err) {
-    return new Response(JSON.stringify({ error: err.message }), {
-      status: 500,
-      headers: { 'Content-Type': 'application/json' },
-    })
+    return res.status(500).json({ error: err.message })
   }
 }
-
-export const config = { path: '/api/ig' }

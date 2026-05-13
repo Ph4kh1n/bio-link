@@ -44,22 +44,17 @@ export default function useInstagramAvatar(username) {
 
       const url = endpoints[index]
 
-      const isApi =
-        url.startsWith('/api/ig') || url.startsWith(window.location.origin + '/api/ig')
-
       fetch(url)
         .then((r) => {
           if (!r.ok) throw new Error(`HTTP ${r.status}`)
-
-          if (isApi) {
-            return r.json().then((data) => {
+          const ct = r.headers.get('content-type') || ''
+          return r.text().then((text) => {
+            if (ct.includes('application/json')) {
+              const data = JSON.parse(text)
               if (data.profile_pic_url) return data.profile_pic_url
               throw new Error('no profile_pic_url')
-            })
-          }
-
-          return r.text().then((html) => {
-            const m = html.match(
+            }
+            const m = text.match(
               /<meta\s[^>]*property="og:image"[^>]*content="([^"]+)"/i
             )
             if (m) return m[1].replace(/&amp;/g, '&')
