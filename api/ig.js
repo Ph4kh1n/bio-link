@@ -5,7 +5,7 @@ export default async function handler(req, res) {
     return res.status(400).json({ error: 'username required' })
   }
 
-  async function getPicUrl() {
+  async function tryApi() {
     const ig = await fetch(
       `https://www.instagram.com/api/v1/users/web_profile_info/?username=${encodeURIComponent(username)}`,
       {
@@ -19,14 +19,17 @@ export default async function handler(req, res) {
       }
     )
     const data = await ig.json()
-    return data?.data?.user?.profile_pic_url_hd || data?.data?.user?.profile_pic_url
+    return (
+      data?.data?.user?.profile_pic_url_hd ||
+      data?.data?.user?.profile_pic_url
+    )
   }
 
-  async function getScrapeUrl() {
+  async function tryScrape() {
     const page = await fetch(`https://www.instagram.com/${username}/`, {
       headers: {
         'User-Agent':
-          'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+          'facebookexternalhit/1.1 (+http://www.facebook.com/externalhit_uatext.php)',
         Accept: 'text/html',
       },
     })
@@ -41,13 +44,13 @@ export default async function handler(req, res) {
   let source
 
   try {
-    picUrl = await getPicUrl()
+    picUrl = await tryApi()
     if (picUrl) source = 'api'
   } catch {}
 
   if (!picUrl) {
     try {
-      picUrl = await getScrapeUrl()
+      picUrl = await tryScrape()
       if (picUrl) source = 'scrape'
     } catch {}
   }
@@ -56,27 +59,6 @@ export default async function handler(req, res) {
     return res.status(404).json({ error: 'no profile pic found' })
   }
 
-  try {
-    const imgRes = await fetch(picUrl, {
-      headers: {
-        'User-Agent':
-          'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-        Accept: 'image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8',
-      },
-    })
-
-    if (!imgRes.ok) {
-      return res.status(502).json({ error: 'failed to fetch image' })
-    }
-
-    const contentType = imgRes.headers.get('content-type') || 'image/jpeg'
-    const buffer = Buffer.from(await imgRes.arrayBuffer())
-
-    res.setHeader('Content-Type', contentType)
-    res.setHeader('Cache-Control', 'public, max-age=3600, s-maxage=3600')
-    res.setHeader('X-IG-Source', source)
-    return res.send(buffer)
-  } catch (err) {
-    return res.status(502).json({ error: err.message })
-  }
+  res.setHeader('Cache-Control', 'public, max-age=3600')
+  return res.json({ profile_pic_url: picUrl, source })
 }
